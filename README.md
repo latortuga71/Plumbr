@@ -1,5 +1,5 @@
 # Plumbr
-Tools to play invesigate names pipes
+Tools to invesigate named pipes
 
 ## Draino
 Hooks Write/Read file. writes data to C:\\windows\temp\PLUMBER.pid.LOG
