@@ -1,9 +1,11 @@
 # Plumbr
+Tools to play invesigate names pipes
 
-Sniff Named Pipes.
-Currently doesnt bypass process mitigation policies.
+## Draino
+Hooks Write/Read file. writes data to C:\\windows\temp\PLUMBER.pid.LOG
 
+## RotoRooter
+Like AccessChk For Named Pipes
 
-# TODO
-* Use relective dll shellcode to bypass signatures protections
-* Bypass other mitigation policies.
+## CheckRace
+Creates Named Pipe Server For Check For RaceConditions.
