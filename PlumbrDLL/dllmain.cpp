@@ -15,7 +15,11 @@ static int (WINAPI * RealMessageBoxA)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption
 static WCHAR g_tmpFileName[MAX_PATH];
 static HANDLE g_hTmpFile;
 
+VOID WriteHooks();
+
 // Our Hooks
+
+
 
 BOOL WINAPI HookedReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped) {
     BOOL result = RealReadFile(hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead, lpOverlapped);
@@ -108,6 +112,94 @@ BOOL InitSharedFile() {
     return true;
 }
 
+
+VOID* gWriteFileBase;
+unsigned char originalBytes[13];
+
+
+BOOL WINAPI OriginalWriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD  nNumberOfBytesToWrite, LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped) {
+    // Restore Original Bytes
+    DWORD oldProt;
+    VirtualProtect(gWriteFileBase, 16, PAGE_EXECUTE_READWRITE, &oldProt);
+    WriteProcessMemory(GetCurrentProcess(), gWriteFileBase, originalBytes, sizeof(originalBytes), NULL);
+    VirtualProtect(gWriteFileBase, 16, oldProt, &oldProt);
+    // Now we call original function
+    BOOL res = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped);
+    // Now we write our hooks back again
+    WriteHooks();
+    // and return the result of WriteFile
+    return res;
+}
+
+BOOL WINAPI DoHook(HANDLE hFile, LPCVOID lpBuffer, DWORD  nNumberOfBytesToWrite, LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped) {
+    // Do Stuff Here
+    MessageBoxA(NULL, (char*)lpBuffer, "Hooked WriteFile", 0);
+    return OriginalWriteFile(hFile,lpBuffer,nNumberOfBytesToWrite,lpNumberOfBytesWritten,lpOverlapped);
+}
+
+
+VOID WriteHooks() {
+    DWORD oldProt;
+    VirtualProtect(gWriteFileBase, 16, PAGE_EXECUTE_READWRITE, &oldProt);
+    unsigned char trampStamp[] = { 0x49, 0xbb, 0xde, 0xad, 0xc0, 0xde, 0xde, 0xad, 0xc0, 0xde, 0x41, 0xff, 0xe3 };
+    *(void**)(trampStamp + 2) = &DoHook;
+    SIZE_T wrote;
+    SIZE_T read;
+    WriteProcessMemory(GetCurrentProcess(), gWriteFileBase, trampStamp, sizeof(trampStamp), &wrote);
+    VirtualProtect(gWriteFileBase, 16, oldProt, &oldProt);
+    MessageBoxA(NULL, "Hook Set", "Hook Set", 0);
+}
+
+extern "C" __declspec(dllexport) BOOL SetupHooks() {
+    // get address of function to hook
+    HMODULE hKernel32 = LoadLibraryA("kernel32.dll");
+    if (hKernel32 == 0) {
+        fprintf(stderr, "EXITING. Failed to get address of kernel32\n");
+        exit(1);
+    }
+    gWriteFileBase = GetProcAddress(hKernel32, "WriteFile");
+    if (gWriteFileBase == NULL) {
+        fprintf(stderr, "EXITING. Failed to get address of WriteFile\n");
+        exit(1);
+    }
+    // Save original bytes
+    SIZE_T read;
+    BOOL res = ReadProcessMemory(GetCurrentProcess(), gWriteFileBase, originalBytes, 12, &read);
+    if (!res) {
+        fprintf(stderr, "EXITING. Failed to read original bytes %d %d\n", GetLastError(), read);
+        exit(1);
+    }
+    printf("Address Of Kernel32 0x%p\n",hKernel32);
+    printf("Address Of WriteFile 0x%p", gWriteFileBase);
+    // This Writes Tramp
+    WriteHooks();
+    return TRUE;
+}
+
+
+
+BOOL APIENTRY DllMain( HMODULE hModule,DWORD  ul_reason_for_call,LPVOID lpReserved)
+{
+    switch (ul_reason_for_call)
+    {
+        case DLL_PROCESS_ATTACH: {
+            MessageBoxA(NULL, "Injected!", "Hi", MB_OK);
+            SetupHooks();
+            break;
+        }
+        case DLL_THREAD_ATTACH:
+            break;
+        case DLL_THREAD_DETACH:
+            break;
+        case DLL_PROCESS_DETACH: {
+            break;
+        }
+    }
+    return TRUE;
+}
+
+/*
+            Detours Way
 BOOL APIENTRY DllMain( HMODULE hModule,DWORD  ul_reason_for_call,LPVOID lpReserved)
 {
     switch (ul_reason_for_call)
@@ -124,8 +216,6 @@ BOOL APIENTRY DllMain( HMODULE hModule,DWORD  ul_reason_for_call,LPVOID lpReserv
             LONG lError = DetourTransactionCommit();
             if (lError != NO_ERROR) {
                 return FALSE;
-            }
-            else {
             }
             break;
         }
@@ -145,4 +235,4 @@ BOOL APIENTRY DllMain( HMODULE hModule,DWORD  ul_reason_for_call,LPVOID lpReserv
     }
     return TRUE;
 }
-
+*/
